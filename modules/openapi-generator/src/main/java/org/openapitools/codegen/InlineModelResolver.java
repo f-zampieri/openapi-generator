@@ -36,6 +36,7 @@ public class InlineModelResolver {
     private OpenAPI openapi;
     private Map<String, Schema> addedModels = new HashMap<String, Schema>();
     private Map<String, String> generatedSignature = new HashMap<String, String>();
+    private Map<String, List<String>> referredToBy = new HashMap<>();
     static Logger LOGGER = LoggerFactory.getLogger(InlineModelResolver.class);
 
     void flatten(OpenAPI openapi) {
@@ -405,6 +406,22 @@ public class InlineModelResolver {
                 }
             }
         }
+        for (String refereeName : this.referredToBy.keySet()) {
+            Schema refereeModel = models.get(refereeName);
+            if (refereeModel.getXml() != null) {
+                for (String refererName : this.referredToBy.get(refereeName)) {
+                    Schema refererModel = models.get(refererName);
+                    Map<String, Schema> refererModelProperties = refererModel.getProperties();
+                    for (String refererModelPropertyName : refererModelProperties.keySet()) {
+                        Schema refererModelProperty = refererModelProperties.get(refererModelPropertyName);
+                        String refererModelPropertyRef = refererModelProperty.get$ref();
+                        if (refererModelPropertyRef != null && refereeName.equals(ModelUtils.getSimpleRef(refererModelProperty.get$ref()))) {
+                            refererModelProperty.setXml(refereeModel.getXml());
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -485,6 +502,14 @@ public class InlineModelResolver {
         Map<String, Schema> modelsToAdd = new HashMap<String, Schema>();
         for (String key : properties.keySet()) {
             Schema property = properties.get(key);
+            String $ref = property.get$ref();
+            if ($ref != null) {
+                String simpleRef = ModelUtils.getSimpleRef($ref);
+                if (this.referredToBy.get(simpleRef) == null) {
+                    this.referredToBy.put(simpleRef, new ArrayList<>());
+                }
+                this.referredToBy.get(simpleRef).add(path);
+            }
             if (property instanceof ObjectSchema && ((ObjectSchema) property).getProperties() != null
                     && ((ObjectSchema) property).getProperties().size() > 0) {
                 ObjectSchema op = (ObjectSchema) property;
